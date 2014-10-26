@@ -1,0 +1,107 @@
+---
+title: "Weather events consequences on health and economy"
+author: "Matthias Georgi"
+date: "October 22, 2014"
+output: html_document
+---
+
+This document analyzes the effects of weather events on population health and their economic consequences. The analysis is based on the U.S. National Oceanic and Atmospheric Administration's Storm Database. We will look at the most harmful events in terms of human fatalities and property damage. 
+
+## Data Processing
+
+```{r}
+library(reshape)
+library(ggplot2)
+library(R.utils)
+```
+
+Read the unzipped data file into a data frame.
+
+```{r,cache=TRUE}
+download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2", "repdata-data-StormData.csv.bz2")
+bunzip2("repdata-data-StormData.csv.bz2")
+df <- read.csv("repdata-data-StormData.csv")
+```
+
+We need to replace small differences in spelling in the event type variable.
+```{r,cache=TRUE}
+replacements <- read.csv("replacements.csv")
+evtype <- sapply(df$EVTYPE, as.character)
+
+for (i in 1:nrow(replacements)) {
+  replace <- grepl(replacements$pattern[i], evtype, perl=TRUE)
+  evtype[replace] <- as.character(replacements$evtype[i])
+}
+
+df$EVTYPE <- as.factor(evtype)
+```
+
+We also need to multiply propdmg and cropdmg with their exponents to get the true numerical value.
+
+```{r,cache=TRUE}
+exp_key <- c("H", "K", "M", "B")
+exp_val <- c(100, 1000, 1000000, 1000000000)
+df$prop_dmg <- vector(length = nrow(df))
+df$crop_dmg <- vector(length = nrow(df))
+
+for (i in 1:4) {
+  idx <- which(df$PROPDMGEXP == exp_key[i])
+  df$prop_dmg[idx] <- df$PROPDMG[idx] * exp_val[i]
+}
+
+for (i in 1:4) {
+  idx <- which(df$CROPDMGEXP == exp_key[i])
+  df$crop_dmg[idx] <- df$CROPDMG[idx] * exp_val[i]
+}
+```
+
+Melting the data set allows easier transformation later. We only take variables that are interestig for our analysis. Finally we recast the data set to capture the total number grouped by event type.
+
+```{r}
+vars <- c("FATALITIES", "INJURIES", "prop_dmg", "crop_dmg")
+data <- melt(df, id.vars = c("EVTYPE"), measure.vars = vars)
+totals <- cast(data, EVTYPE~variable, sum)
+```
+
+Rank event types by total number of fatalitites, property damage and crop damage.
+
+```{r}
+top_fatalities <- totals[order(totals$FATALITIES, decreasing = TRUE)[1:5],]
+top_prop <- totals[order(totals$prop_dmg, decreasing = TRUE)[1:5],]
+top_crop <- totals[order(totals$crop_dmg, decreasing = TRUE)[1:5],]
+```
+
+
+## Results
+
+What kind of events caused the highest damage in terms of fatalities?
+
+```{r}
+ggplot(top_fatalities) + 
+  aes(x = EVTYPE, y = FATALITIES) + 
+  geom_bar(stat = 'identity') +
+  labs(title="Number of fatalities by event type", x="Event type", y="Number of fatalities")
+
+```
+
+What kind of events caused the highest damage in terms of property?
+
+```{r}
+ggplot(top_prop) + 
+  aes(x = EVTYPE, y = prop_dmg) + 
+  geom_bar(stat = 'identity') +
+  labs(title="Property damage by event type", x="Event type", y="Damage in Dollars")
+```
+
+What kind of events caused the highest damage in terms of crop?
+
+```{r}
+ggplot(top_crop) + 
+  xlab("Event type") +
+  ylab("Crop damage (in dollars)") +  
+  aes(x = EVTYPE, y = crop_dmg) + 
+  geom_bar(stat = 'identity') +
+  labs(title="Crop damage by event type", x="Event type", y="Damage in Dollars")
+
+```
+
